@@ -1,0 +1,1901 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DFOS Line OEE Performance - Dynamic Cockpit Grid</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;700;800&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            factory: {
+              950: '#040711',
+              900: '#080e1c',
+              850: '#0e162a',
+              800: '#14203a',
+              700: '#1f3054',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Strict Layout & Fail-safe Dimensions */
+    html, body {
+      height: 100vh;
+      overflow: hidden;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      background-color: #040711;
+      color: #f1f5f9;
+      font-family: 'Inter', sans-serif;
+    }
+
+    /* Enforce SVG sizing safeguard even if Tailwind CDN is offline */
+    svg {
+      max-width: 100%;
+      max-height: 100%;
+      display: inline-block;
+      vertical-align: middle;
+      flex-shrink: 0;
+    }
+
+    .icon-sm {
+      width: 14px !important;
+      height: 14px !important;
+      min-width: 14px !important;
+      min-height: 14px !important;
+    }
+
+    .icon-md {
+      width: 18px !important;
+      height: 18px !important;
+      min-width: 18px !important;
+      min-height: 18px !important;
+    }
+
+    .icon-lg {
+      width: 24px !important;
+      height: 24px !important;
+      min-width: 24px !important;
+      min-height: 24px !important;
+    }
+
+    /* Custom internal scrollbars */
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: #080e1c; }
+    ::-webkit-scrollbar-thumb { background: #1f3054; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #38bdf8; }
+
+    /* Indicator Dot Blink & Glow Animation */
+    @keyframes blinkGlow {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.35; transform: scale(0.85); }
+    }
+
+    .dot-indicator {
+      animation: blinkGlow 1.8s ease-in-out infinite;
+    }
+
+    .dot-glow-green {
+      box-shadow: 0 0 10px 3px rgba(16, 185, 129, 0.95), 0 0 16px 5px rgba(16, 185, 129, 0.45);
+    }
+
+    .dot-glow-amber {
+      box-shadow: 0 0 10px 3px rgba(245, 158, 11, 0.95), 0 0 16px 5px rgba(245, 158, 11, 0.45);
+    }
+
+    .dot-glow-red {
+      box-shadow: 0 0 10px 3px rgba(244, 63, 94, 0.95), 0 0 18px 5px rgba(244, 63, 94, 0.55);
+    }
+
+    /* High-contrast Native Select & Dropdown Styling */
+    select {
+      color-scheme: dark;
+    }
+    select option {
+      background-color: #080e1c !important;
+      color: #f8fafc !important;
+      font-weight: 600 !important;
+      font-size: 12px !important;
+      padding: 6px 10px !important;
+    }
+    select option:hover,
+    select option:focus,
+    select option:checked {
+      background-color: #0891b2 !important;
+      color: #ffffff !important;
+    }
+
+    /* Interactive canvas cursor */
+    .chart-canvas {
+      cursor: ns-resize;
+      touch-action: none;
+    }
+    .chart-canvas:active {
+      cursor: grabbing;
+    }
+  </style>
+</head>
+
+<body class="bg-[#040711] text-slate-100 font-sans antialiased selection:bg-cyan-500 selection:text-white h-screen flex flex-col">
+
+  <!-- Toast Notification Container -->
+  <div id="toastContainer" class="fixed top-3 right-4 z-50 flex flex-col gap-2 max-w-sm pointer-events-none"></div>
+
+  <!-- ================= TOP HEADER BAR (~46px) ================= -->
+  <header class="h-11 bg-[#080e1c]/95 backdrop-blur border-b border-slate-800 px-3 lg:px-4 flex items-center justify-between gap-2 shrink-0">
+    
+    <!-- Brand Title & Source Badge -->
+    <div class="flex items-center gap-2 min-w-0">
+      <div class="p-1.5 rounded-lg bg-gradient-to-tr from-cyan-500 to-blue-600 text-white shadow-md shadow-cyan-500/30 shrink-0">
+        <svg class="icon-sm" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+        </svg>
+      </div>
+      <div class="flex items-center gap-2 min-w-0">
+        <h1 class="text-xs sm:text-sm font-extrabold tracking-tight text-white uppercase truncate">DFOS Line OEE Cockpit</h1>
+        <span id="sourceBadge" class="text-[10px] px-2 py-0.5 rounded-full bg-cyan-950/80 text-cyan-300 border border-cyan-700/80 font-semibold truncate max-w-[200px]" title="Current Data Source and Mode">
+          Connecting...
+        </span>
+      </div>
+    </div>
+
+    <!-- Center: Main View Tabs (Grid View vs Bar Graph Comparison) -->
+    <div class="flex items-center bg-[#0e162a] p-0.5 rounded-lg border border-slate-700 text-xs font-bold">
+      <button id="tabGridBtn" onclick="switchDashboardTab('grid')" class="px-3 py-1 rounded-md bg-cyan-600 text-white shadow transition-all flex items-center gap-1.5">
+        <svg class="icon-sm" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+        <span>Grid View</span>
+      </button>
+      <button id="tabBarBtn" onclick="switchDashboardTab('bar')" class="px-3 py-1 rounded-md text-slate-300 hover:text-white transition-all flex items-center gap-1.5">
+        <svg class="icon-sm" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+        <span>Bar Comparison</span>
+      </button>
+    </div>
+
+    <!-- Quick Preset Buttons for Layout -->
+    <div id="layoutPresetsContainer" class="hidden 2xl:flex items-center gap-1 bg-[#0e162a] p-0.5 rounded-lg border border-slate-700/80 text-[11px]">
+      <span class="text-slate-400 px-1.5 text-[10px] font-medium">Layout:</span>
+      <button onclick="applyLinePreset('top4')" class="px-2 py-0.5 rounded hover:bg-[#14203a] text-slate-300 hover:text-white transition-colors">4 Lines</button>
+      <button onclick="applyLinePreset('top6')" class="px-2 py-0.5 rounded hover:bg-[#14203a] text-slate-300 hover:text-white transition-colors">6 Lines</button>
+      <button onclick="applyLinePreset('top8')" class="px-2 py-0.5 rounded hover:bg-[#14203a] text-slate-300 hover:text-white transition-colors">8 Lines</button>
+      <button onclick="applyLinePreset('active')" class="px-2 py-0.5 rounded hover:bg-[#14203a] text-cyan-400 font-bold transition-colors">Active Only</button>
+      <button onclick="applyLinePreset('all')" class="px-2 py-0.5 rounded hover:bg-[#14203a] text-slate-300 hover:text-white transition-colors">All Lines</button>
+    </div>
+
+    <!-- Controls: Period, Daily Range, Scale, Lines, Cloud Sync, Settings, Auto-Sync, Fullscreen -->
+    <div class="flex items-center gap-1.5 text-xs">
+      
+      <!-- Period Selector -->
+      <div id="periodSelectContainer" class="flex items-center bg-[#14203a] border border-cyan-500/80 rounded-lg px-2 py-1 shadow-sm shadow-cyan-950">
+        <span id="periodSelectLabel" class="text-[10px] text-cyan-300 font-bold mr-1">Week:</span>
+        <select id="periodSelect" class="bg-[#0e162a] text-xs font-bold text-white px-1.5 py-0.5 rounded border border-slate-700 focus:outline-none focus:border-cyan-400 cursor-pointer" onchange="onPeriodChange(this.value)">
+        </select>
+      </div>
+
+      <!-- Daily Trend Range Selector -->
+      <div id="dailyRangeContainer" class="hidden items-center bg-[#14203a] border border-slate-700 rounded-lg px-2 py-1 shadow-sm" title="Select historical date span for mini trend chart">
+        <span class="text-[10px] text-slate-300 mr-1.5 font-medium">Trend:</span>
+        <select id="dailyRangeSelect" class="bg-[#0e162a] text-xs font-bold text-cyan-200 px-1.5 py-0.5 rounded border border-slate-700 focus:outline-none focus:border-cyan-400 cursor-pointer" onchange="onDailyRangeChange(this.value)">
+          <option value="14" selected class="bg-[#080e1c] text-slate-100 font-semibold">Last 14D</option>
+          <option value="30" class="bg-[#080e1c] text-slate-100 font-semibold">Last 30D</option>
+          <option value="all" class="bg-[#080e1c] text-slate-100 font-semibold">All Days</option>
+        </select>
+      </div>
+
+      <!-- Global Scale Mode Selector -->
+      <div id="globalScaleContainer" class="flex items-center bg-[#14203a] border border-slate-700 rounded-lg px-2 py-1 shadow-sm" title="Select default vertical scale mode across cards">
+        <span class="text-[10px] text-slate-300 mr-1.5 font-medium">Y-Scale:</span>
+        <select id="globalScaleSelect" class="bg-[#0e162a] text-xs font-bold text-cyan-200 px-1.5 py-0.5 rounded border border-slate-700 focus:outline-none focus:border-cyan-400 cursor-pointer" onchange="onGlobalScaleChange(this.value)">
+          <option value="auto" class="bg-[#080e1c] text-slate-100 font-semibold">Auto Scale</option>
+          <option value="30-100" class="bg-[#080e1c] text-slate-100 font-semibold">30% - 100%</option>
+          <option value="50-100" class="bg-[#080e1c] text-slate-100 font-semibold">50% - 100%</option>
+          <option value="0-100" class="bg-[#080e1c] text-slate-100 font-semibold">0% - 100% (Full)</option>
+        </select>
+      </div>
+
+      <!-- Line Setup Button -->
+      <button onclick="openLineSetupModal()" class="flex items-center gap-1 px-2.5 py-1 bg-[#14203a] hover:bg-[#1f3054] text-slate-200 border border-slate-700 rounded-lg transition-all" title="Select production lines">
+        <svg class="icon-sm text-indigo-400" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        <span>Lines (<span id="lineCountBadge" class="text-cyan-400 font-extrabold">25</span>)</span>
+      </button>
+
+      <!-- GOOGLE DRIVE SYNC BUTTONS (Daily vs Weekly) -->
+      <div class="flex items-center bg-[#0e162a] p-0.5 rounded-lg border border-slate-700 text-xs font-bold">
+        <button id="btnSyncDaily" onclick="fetchFromGoogleDrive('daily')" class="px-2.5 py-1 rounded bg-cyan-600 text-white flex items-center gap-1 transition-all shadow" title="Sync Daily OEE CSV from Google Drive">
+          <span>📅 Daily</span>
+        </button>
+        <button id="btnSyncWeekly" onclick="fetchFromGoogleDrive('weekly')" class="px-2.5 py-1 rounded text-slate-300 hover:text-white flex items-center gap-1 transition-all" title="Sync Weekly OEE CSV from Google Drive">
+          <span>📊 Weekly</span>
+        </button>
+      </div>
+
+      <!-- Settings Button (Safe explicit SVG dimension) -->
+      <button onclick="openSettingsModal()" class="flex items-center gap-1 px-2 py-1 bg-[#14203a] hover:bg-[#1f3054] text-slate-300 hover:text-white border border-slate-700 rounded-lg transition-all" title="Google Drive & System Settings">
+        <svg class="icon-sm text-slate-300" width="14" height="14" style="width:14px; height:14px; min-width:14px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+        <span class="hidden xl:inline">Settings</span>
+      </button>
+
+      <!-- Auto Sync Trigger with Live Status Indicator -->
+      <button onclick="openAutoSyncModal()" id="btnAutoSyncBadge" class="flex items-center gap-1 px-2 py-1 bg-[#14203a] hover:bg-[#1f3054] text-slate-300 border border-slate-700 rounded-lg transition-all" title="Configure background auto-refresh">
+        <svg class="icon-sm text-cyan-400" width="14" height="14" style="width:14px; height:14px; min-width:14px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <span id="autoSyncLabel" class="text-[10px] hidden md:inline">Auto: Off</span>
+      </button>
+
+      <!-- Fullscreen Toggle -->
+      <button onclick="toggleFullscreen()" class="p-1.5 bg-[#14203a] hover:bg-[#1f3054] text-slate-300 border border-slate-700 rounded-lg transition-all" title="Toggle Fullscreen">
+        <svg class="icon-sm text-amber-400" width="14" height="14" style="width:14px; height:14px; min-width:14px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/>
+        </svg>
+      </button>
+
+    </div>
+  </header>
+
+  <!-- Interactive Instruction Banner (~24px) -->
+  <div class="bg-[#080e1c]/90 border-b border-slate-800/80 px-3 py-1 flex items-center justify-between text-[11px] text-slate-400 shrink-0">
+    <div class="flex items-center gap-2">
+      <span class="inline-flex items-center justify-center w-4 h-4 rounded bg-cyan-950 text-cyan-300 border border-cyan-700 text-[10px] font-bold">↕</span>
+      <span id="bannerInstructionText"><strong>Chart Controls:</strong> Drag vertically on chart to pan | Mouse wheel to zoom | Use <strong>[+]</strong> <strong>[-]</strong> <strong>[⟲]</strong> | Keys: <strong>←</strong> / <strong>→</strong></span>
+    </div>
+    <div class="hidden sm:flex items-center gap-3 font-semibold text-[10px]">
+      <span class="flex items-center gap-1.5"><span class="w-2.5 h-1 rounded-sm bg-emerald-400 inline-block shadow-sm shadow-emerald-500/50"></span> Actual (Pass)</span>
+      <span class="flex items-center gap-1.5"><span class="w-2.5 h-1 rounded-sm bg-rose-500 inline-block shadow-sm shadow-rose-500/50"></span> Actual (Below Target)</span>
+      <span class="flex items-center gap-1.5"><span class="w-2.5 h-1 rounded-sm bg-slate-600 inline-block"></span> Idle Line</span>
+      <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 border-b-2 border-dashed border-sky-400 inline-block"></span> Line Target</span>
+    </div>
+  </div>
+
+  <!-- ================= MAIN VIEWPORT CONTAINER ================= -->
+  <main class="flex-1 min-h-0 p-2 overflow-hidden flex flex-col">
+
+    <!-- TAB 1: DYNAMIC LINE CARDS GRID (100% Fit) -->
+    <div id="tabGridView" class="flex-1 min-h-0 flex flex-col w-full h-full overflow-hidden">
+      <div id="dynamicLineGrid" class="flex-1 min-h-0 grid gap-2 w-full h-full overflow-hidden">
+      </div>
+    </div>
+
+    <!-- TAB 2: BAR GRAPH COMPARISON VIEW (Highest to Lowest OEE) -->
+    <div id="tabBarView" class="hidden flex-1 min-h-0 flex-col gap-2 w-full h-full overflow-hidden bg-[#080e1c] border border-slate-800 rounded-xl p-3 shadow-2xl">
+      
+      <!-- Bar View Header Stats Strip -->
+      <div class="flex items-center justify-between gap-3 border-b border-slate-800/80 pb-2 shrink-0">
+        <div class="flex items-center gap-3">
+          <div class="flex items-center gap-1.5">
+            <span class="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse"></span>
+            <h2 class="text-xs sm:text-sm font-extrabold text-white tracking-wide uppercase">
+              All Lines Performance Comparison (Highest to Lowest)
+            </h2>
+          </div>
+          <span id="barViewPeriodBadge" class="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-700/80">
+            Date: 2026-09-18
+          </span>
+        </div>
+
+        <div class="flex items-center gap-2 text-xs">
+          <div class="bg-[#0e162a] px-2.5 py-1 rounded-lg border border-slate-800 flex items-center gap-1.5">
+            <span class="text-slate-400 text-[10px]">Top Performer:</span>
+            <strong id="barTopLine" class="text-emerald-400 font-mono font-extrabold">--</strong>
+          </div>
+          <div class="bg-[#0e162a] px-2.5 py-1 rounded-lg border border-slate-800 flex items-center gap-1.5">
+            <span class="text-slate-400 text-[10px]">Lowest Running:</span>
+            <strong id="barLowestLine" class="text-rose-400 font-mono font-extrabold">--</strong>
+          </div>
+          <div class="bg-[#0e162a] px-2.5 py-1 rounded-lg border border-slate-800 flex items-center gap-1.5">
+            <span class="text-slate-400 text-[10px]">Running Avg:</span>
+            <strong id="barRunningAvg" class="text-cyan-300 font-mono font-extrabold">--%</strong>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bar Chart Container -->
+      <div class="flex-1 min-h-0 w-full relative pt-1">
+        <canvas id="allLinesBarChartCanvas"></canvas>
+      </div>
+
+      <!-- Bar Chart Legend & Tip -->
+      <div class="flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-800/80 pt-1.5 shrink-0">
+        <div class="flex items-center gap-3">
+          <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm bg-emerald-500 inline-block"></span> Pass Target (&ge; Target)</span>
+          <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm bg-amber-500 inline-block"></span> Warning (Gap &ge; -5%)</span>
+          <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm bg-rose-600 inline-block"></span> Critical (Below Target)</span>
+          <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm bg-slate-700 inline-block"></span> Idle Line</span>
+          <span class="flex items-center gap-1.5"><span class="w-3 h-1 bg-sky-400 inline-block border-b border-dashed border-sky-400"></span> Target Marker</span>
+        </div>
+        <span class="text-[10px] text-slate-500">💡 Click on any bar to open in-depth Kaizen & historical analysis modal</span>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- ================= SETTINGS MODAL ================= -->
+  <div id="settingsModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 hidden" onclick="if(event.target===this) closeSettingsModal()">
+    <div class="bg-[#080e1c] border-2 border-slate-700 rounded-2xl w-full max-w-lg p-5 shadow-2xl flex flex-col gap-4 text-xs" onclick="event.stopPropagation()">
+      
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div class="flex items-center gap-2.5">
+          <div class="p-2 rounded-xl bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+            <svg class="icon-md" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          </div>
+          <div>
+            <h3 class="text-sm font-black text-white">Google Drive & System Settings</h3>
+            <p class="text-[11px] text-slate-400">Configure Google Apps Script API endpoint for Gateway Factory folder</p>
+          </div>
+        </div>
+        <button onclick="closeSettingsModal()" class="text-slate-400 hover:text-white text-lg font-bold" title="Close (Esc)">&times;</button>
+      </div>
+
+      <div class="space-y-3.5">
+        <div>
+          <label class="block text-slate-200 font-bold mb-1.5 flex items-center justify-between">
+            <span>Google Apps Script Web App URL</span>
+            <span id="settingsUrlStatus" class="text-[10px] font-mono text-emerald-400 font-semibold">Active &bull; Saved</span>
+          </label>
+          <textarea id="settingsGdriveUrlInput" rows="3" placeholder="https://script.google.com/macros/s/.../exec" class="w-full bg-[#0e162a] border border-slate-700 rounded-lg p-2.5 text-white font-mono text-[11px] focus:outline-none focus:border-cyan-400 select-all"></textarea>
+          <p class="text-[10px] text-slate-400 mt-1">
+            Enter your deployed Web App URL. The URL is saved in local storage and persists across browser restarts.
+          </p>
+        </div>
+
+        <div class="p-3 bg-[#0e162a] rounded-xl border border-slate-800 flex items-center justify-between">
+          <div>
+            <div class="font-bold text-slate-200">Reset to Default URL</div>
+            <div class="text-[10px] text-slate-400">Restore factory default Apps Script endpoint</div>
+          </div>
+          <button onclick="resetSettingsUrlToDefault()" class="px-2.5 py-1 text-[11px] bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 rounded font-semibold transition-colors">
+            Reset Default
+          </button>
+        </div>
+      </div>
+
+      <div class="pt-2 border-t border-slate-800 flex items-center justify-end gap-2">
+        <button onclick="closeSettingsModal()" class="px-3 py-1.5 text-slate-400 hover:text-white">Cancel</button>
+        <button onclick="saveSettings()" class="px-4 py-1.5 font-bold bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg shadow-md transition-all">
+          Save & Re-sync
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ================= DRILL-DOWN MODAL ================= -->
+  <div id="drillDownModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 hidden" onclick="if(event.target===this) closeDrillDownModal()">
+    <div class="bg-[#080e1c] border-2 border-slate-700 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden text-xs" onclick="event.stopPropagation()">
+      
+      <!-- Drilldown Header -->
+      <div class="p-3.5 border-b border-slate-800 flex items-center justify-between bg-[#0e162a]">
+        <div class="flex items-center gap-3">
+          <div class="p-2 rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
+            <svg class="icon-md" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/></svg>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h3 id="modalLineTitle" class="text-base font-black text-white tracking-wide">SERAC</h3>
+              <span id="modalPeriodBadge" class="text-[11px] px-2 py-0.5 rounded font-black font-mono bg-cyan-950 text-cyan-300 border border-cyan-600">Week 37</span>
+              <span id="modalStatusBadge" class="text-[11px] px-2.5 py-0.5 rounded font-black uppercase bg-emerald-500 text-slate-950 shadow-sm shadow-emerald-500/50">PASS</span>
+            </div>
+            <p class="text-slate-400 text-[11px] mt-0.5">In-Depth OEE Performance Analysis (Drag or scroll on chart to adjust scale)</p>
+          </div>
+        </div>
+
+        <button onclick="closeDrillDownModal()" class="text-slate-400 hover:text-white p-1 rounded-lg" title="Close (Esc)">
+          <svg class="icon-lg" width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <!-- Drilldown Body -->
+      <div class="p-4 overflow-y-auto flex-1 space-y-4">
+        
+        <!-- KPI Metrics Strip -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          <div class="bg-[#0e162a] p-3 rounded-xl border border-slate-800">
+            <div class="text-[11px] text-slate-400 font-semibold" id="modalActLabel">OEE Actual</div>
+            <div id="modalActOee" class="text-2xl font-black text-white mt-1">--%</div>
+            <div class="text-[10px] text-slate-400 mt-0.5" id="modalTargetLabel">Target: --%</div>
+          </div>
+          <div class="bg-[#0e162a] p-3 rounded-xl border border-slate-800">
+            <div class="text-[11px] text-slate-400 font-semibold">Gap vs Target</div>
+            <div id="modalGapVal" class="text-2xl font-black text-emerald-400 mt-1">--%</div>
+            <div class="text-[10px] text-slate-400 mt-0.5" id="modalGapSubtext">Above Target</div>
+          </div>
+          <div class="bg-[#0e162a] p-3 rounded-xl border border-slate-800">
+            <div class="text-[11px] text-slate-400 font-semibold" id="modalAvgLabel">Average OEE</div>
+            <div id="modalAvgOee" class="text-2xl font-black text-cyan-300 mt-1">--%</div>
+            <div class="text-[10px] text-slate-400 mt-0.5" id="modalOperatingRatio">Active Period</div>
+          </div>
+          <div class="bg-[#0e162a] p-3 rounded-xl border border-slate-800">
+            <div class="text-[11px] text-slate-400 font-semibold">Target Hit Rate</div>
+            <div id="modalHitRate" class="text-2xl font-black text-emerald-400 mt-1">--%</div>
+            <div class="text-[10px] text-slate-400 mt-0.5" id="modalHitWeeks">Achieved Periods</div>
+          </div>
+        </div>
+
+        <!-- Detailed Trend Chart -->
+        <div class="bg-[#0e162a] p-4 rounded-xl border border-slate-800 flex flex-col">
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-2">
+              <span class="font-bold text-slate-200" id="modalChartTitle">Historical Trend vs Target</span>
+              <span id="modalScaleBadge" class="text-[10px] px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800 font-mono">↕ Auto Scale</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <button onclick="zoomModalChart(0.85)" class="text-xs px-2 py-0.5 bg-[#14203a] hover:bg-[#1f3054] text-slate-200 rounded border border-slate-700 font-bold" title="Zoom In">+</button>
+              <button onclick="zoomModalChart(1.15)" class="text-xs px-2 py-0.5 bg-[#14203a] hover:bg-[#1f3054] text-slate-200 rounded border border-slate-700 font-bold" title="Zoom Out">-</button>
+              <button onclick="resetModalChartScale()" class="text-xs px-2.5 py-0.5 bg-[#14203a] hover:bg-[#1f3054] text-slate-300 rounded border border-slate-700 font-medium">Reset Scale</button>
+            </div>
+          </div>
+          <div class="h-60 w-full relative">
+            <canvas id="modalTrendCanvas" class="chart-canvas"></canvas>
+          </div>
+        </div>
+
+        <!-- Detailed Breakdown Table -->
+        <div class="border border-slate-800 rounded-xl overflow-hidden">
+          <div class="bg-[#14203a]/80 px-3 py-2 font-bold text-slate-200 border-b border-slate-800 flex items-center justify-between">
+            <span id="modalTableTitle">Historical Performance Log</span>
+            <span class="text-[10px] text-slate-400 font-normal">Click a row to focus that period</span>
+          </div>
+          <div class="max-h-44 overflow-y-auto">
+            <table class="w-full text-left border-collapse text-[11px]">
+              <thead class="sticky top-0 bg-[#0e162a] z-10 border-b border-slate-800 text-slate-400 uppercase font-semibold">
+                <tr>
+                  <th class="py-1.5 px-3" id="modalColPeriod">Period</th>
+                  <th class="py-1.5 px-3 text-right">OEE Actual (%)</th>
+                  <th class="py-1.5 px-3 text-right">Target (%)</th>
+                  <th class="py-1.5 px-3 text-right">Gap</th>
+                  <th class="py-1.5 px-3 text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody id="modalTableBody" class="divide-y divide-slate-800 text-slate-200">
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ================= LINE SETUP MODAL ================= -->
+  <div id="lineSetupModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 hidden">
+    <div class="bg-[#080e1c] border-2 border-slate-700 rounded-2xl w-full max-w-lg max-h-[85vh] flex flex-col shadow-2xl overflow-hidden text-xs">
+      
+      <div class="p-3.5 border-b border-slate-800 flex items-center justify-between bg-[#0e162a]">
+        <div>
+          <h3 class="text-sm font-bold text-white">Line Setup / Select Active Lines</h3>
+          <p class="text-slate-400 text-[11px]">Select production lines to display</p>
+        </div>
+        <button onclick="closeLineSetupModal()" class="text-slate-400 hover:text-white" title="Cancel (Esc)">&times;</button>
+      </div>
+
+      <div class="p-2.5 border-b border-slate-800 bg-[#0e162a] flex items-center justify-between gap-2">
+        <input type="text" id="lineSetupSearchInput" placeholder="Search line name..." class="bg-[#14203a] border border-slate-700 rounded px-2.5 py-1 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 w-48" oninput="filterLineSetupList(this.value)">
+        <div class="flex gap-1.5">
+          <button onclick="toggleAllLinesSelection(true)" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-cyan-400 font-bold rounded">Select All</button>
+          <button onclick="toggleAllLinesSelection(false)" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-400 font-medium rounded">Deselect</button>
+        </div>
+      </div>
+
+      <div id="lineSetupListContainer" class="p-3 overflow-y-auto flex-1 grid grid-cols-2 gap-1.5 max-h-[50vh]">
+      </div>
+
+      <div class="p-3 border-t border-slate-800 bg-[#0e162a] flex items-center justify-between">
+        <span id="lineSetupSummary" class="text-slate-400 font-medium">Selected 0 of 0 lines</span>
+        <div class="flex items-center gap-2">
+          <button onclick="closeLineSetupModal()" class="px-3 py-1.5 text-slate-400 hover:text-white">Cancel</button>
+          <button onclick="saveLineSetup()" class="px-3.5 py-1.5 font-bold bg-cyan-600 hover:bg-cyan-500 text-white rounded shadow-md">Save & Apply</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ================= AUTO SYNC MODAL ================= -->
+  <div id="autoSyncModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 hidden">
+    <div class="bg-[#080e1c] border-2 border-slate-700 rounded-xl w-full max-w-sm p-4 shadow-2xl flex flex-col gap-3 text-xs">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+        <h3 class="text-sm font-bold text-white flex items-center gap-1.5">
+          <svg class="icon-sm text-cyan-400" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          <span>Auto-Refresh Settings</span>
+        </h3>
+        <button onclick="closeAutoSyncModal()" class="text-slate-400 hover:text-white" title="Close (Esc)">&times;</button>
+      </div>
+      <div class="space-y-3">
+        <div class="flex items-center justify-between p-2 rounded bg-[#14203a] border border-slate-700">
+          <div>
+            <div class="font-semibold text-slate-200">Enable Auto-Refresh</div>
+            <div class="text-slate-400 text-[10px]">Periodic background polling from Google Drive</div>
+          </div>
+          <input type="checkbox" id="chkAutoSync" class="w-4 h-4 rounded text-cyan-500 cursor-pointer">
+        </div>
+        <div>
+          <label class="block text-slate-300 font-medium mb-1">Refresh Interval (Minutes)</label>
+          <div class="flex items-center gap-2">
+            <input type="number" id="numSyncInterval" min="1" max="120" value="5" class="bg-[#14203a] border border-slate-700 rounded px-2.5 py-1 text-white w-20 font-mono">
+            <span class="text-slate-400">minutes</span>
+          </div>
+        </div>
+        <button onclick="saveAutoSync()" class="w-full py-2 font-bold bg-cyan-600 hover:bg-cyan-500 text-white rounded shadow">Save Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= JAVASCRIPT APPLICATION CORE ================= -->
+  <script>
+    const DEFAULT_GOOGLE_DRIVE_URL = "https://script.google.com/macros/s/AKfycbx64q6QryZYoX6B3wuHgPGT1YJekIA-5y4UPeaG5XYY_DwRH9TkehHNcd271qBXQ8yg/exec";
+
+    function getGoogleDriveUrl() {
+      return localStorage.getItem('dfos_gdrive_script_url') || DEFAULT_GOOGLE_DRIVE_URL;
+    }
+
+    function setGoogleDriveUrl(url) {
+      if (url && url.trim()) {
+        localStorage.setItem('dfos_gdrive_script_url', url.trim());
+      } else {
+        localStorage.removeItem('dfos_gdrive_script_url');
+      }
+    }
+
+    const appState = {
+      activeTab: 'grid',
+      mode: 'daily',
+      rawRecords: [],
+      recordLookup: new Map(),
+      allWeeks: [],
+      allDates: [],
+      allLines: [],
+      selectedLines: new Set(),
+      tempModalLines: new Set(),
+      selectedWeek: 37,
+      selectedDate: '',
+      dailyTrendDays: 14,
+      activeModalLine: null,
+      globalScaleMode: 'auto',
+      autoSyncActive: false,
+      syncIntervalMins: 5,
+      countdownSecs: 300
+    };
+
+    const gridChartInstances = new Map();
+    let allLinesBarChartInstance = null;
+    let modalTrendChartInstance = null;
+    let modalDefaultScale = { min: 0, max: 100, defaultMin: 0, defaultMax: 100 };
+    let autoSyncTimer = null;
+    window.__justDraggedTime = 0;
+
+    function formatDisplayDate(dateStr, includeYear = false) {
+      if (!dateStr) return '';
+      const parts = dateStr.split('-');
+      if (parts.length < 3) return dateStr;
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const m = parseInt(parts[1], 10) - 1;
+      const d = parts[2];
+      return includeYear ? `${monthNames[m]} ${d}, ${parts[0]}` : `${monthNames[m]} ${d}`;
+    }
+
+    /* -------------------------------------------------------------
+       SETTINGS MODAL HANDLERS
+       ------------------------------------------------------------- */
+    function openSettingsModal() {
+      const input = document.getElementById('settingsGdriveUrlInput');
+      if (input) input.value = getGoogleDriveUrl();
+      const modal = document.getElementById('settingsModal');
+      if (modal) modal.classList.remove('hidden');
+    }
+
+    function closeSettingsModal() {
+      const modal = document.getElementById('settingsModal');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    function resetSettingsUrlToDefault() {
+      const input = document.getElementById('settingsGdriveUrlInput');
+      if (input) input.value = DEFAULT_GOOGLE_DRIVE_URL;
+      showToast('Reset URL to default Apps Script endpoint', 'info');
+    }
+
+    function saveSettings() {
+      const input = document.getElementById('settingsGdriveUrlInput');
+      const urlVal = input ? input.value.trim() : '';
+      if (!urlVal) {
+        showToast('Please enter a valid Web App URL', 'warning');
+        return;
+      }
+      setGoogleDriveUrl(urlVal);
+      closeSettingsModal();
+      showToast('Settings saved! Re-syncing with Google Drive...', 'success');
+      fetchFromGoogleDrive(appState.mode);
+    }
+
+    // Direct Google Drive Sync via JSONP Dual-Channel
+    function fetchFromGoogleDrive(fileType = 'daily') {
+      const isDaily = fileType === 'daily';
+      
+      const btnDaily = document.getElementById('btnSyncDaily');
+      const btnWeekly = document.getElementById('btnSyncWeekly');
+      if (btnDaily && btnWeekly) {
+        btnDaily.className = isDaily 
+          ? 'px-2.5 py-1 rounded bg-cyan-600 text-white flex items-center gap-1 transition-all shadow' 
+          : 'px-2.5 py-1 rounded text-slate-300 hover:text-white flex items-center gap-1 transition-all';
+        btnWeekly.className = !isDaily 
+          ? 'px-2.5 py-1 rounded bg-cyan-600 text-white flex items-center gap-1 transition-all shadow' 
+          : 'px-2.5 py-1 rounded text-slate-300 hover:text-white flex items-center gap-1 transition-all';
+      }
+
+      const driveUrl = getGoogleDriveUrl();
+      showToast(`Connecting for ${fileType.toUpperCase()}...`, 'info');
+      document.getElementById('sourceBadge').textContent = `Syncing ${fileType}...`;
+
+      const cbName = 'gdrive_cb_' + Date.now();
+      window[cbName] = function(csvText) {
+        cleanup();
+        if (csvText && csvText.startsWith('Error:')) {
+          showToast(csvText, 'warning');
+          document.getElementById('sourceBadge').textContent = 'Sync Failed';
+          return;
+        }
+        const parsed = parseCSV(csvText);
+        if (parsed && parsed.records.length > 0) {
+          applyRecords(parsed, isDaily ? 'Daily' : 'Weekly');
+          showToast(`Successfully synced ${fileType.toUpperCase()} OEE data`, 'success');
+        } else {
+          showToast('File loaded but format is invalid', 'warning');
+        }
+      };
+
+      const scriptEl = document.createElement('script');
+      scriptEl.src = `${driveUrl}${driveUrl.includes('?') ? '&' : '?'}type=${fileType}&callback=${cbName}&_t=${Date.now()}`;
+      scriptEl.id = 'gdrive_script_tag';
+      
+      const timeoutTimer = setTimeout(() => {
+        cleanup();
+        // Fallback to direct fetch if JSONP timed out
+        fetch(`${driveUrl}${driveUrl.includes('?') ? '&' : '?'}type=${fileType}&_t=${Date.now()}`)
+          .then(res => res.text())
+          .then(text => {
+            const parsed = parseCSV(text);
+            if (parsed && parsed.records.length > 0) {
+              applyRecords(parsed, isDaily ? 'Daily' : 'Weekly');
+              showToast(`Synced ${fileType.toUpperCase()} via Direct Fetch`, 'success');
+            }
+          })
+          .catch(e => {
+            showToast('Unable to connect. Check Settings.', 'warning');
+            document.getElementById('sourceBadge').textContent = 'Offline';
+          });
+      }, 7000);
+
+      function cleanup() {
+        clearTimeout(timeoutTimer);
+        delete window[cbName];
+        const el = document.getElementById('gdrive_script_tag');
+        if (el) el.remove();
+      }
+
+      document.body.appendChild(scriptEl);
+    }
+
+    function applyRecords(parseResult, sourceName = 'Google Drive') {
+      if (!parseResult || !parseResult.records || parseResult.records.length === 0) return;
+
+      appState.mode = parseResult.mode;
+      appState.rawRecords = parseResult.records;
+
+      appState.recordLookup.clear();
+      parseResult.records.forEach(r => {
+        const periodKey = appState.mode === 'daily' ? r.date : r.week;
+        appState.recordLookup.set(`${r.lineName}_${periodKey}`, r);
+      });
+
+      const lines = Array.from(new Set(parseResult.records.map(r => r.lineName))).sort();
+      appState.allLines = lines;
+
+      if (appState.mode === 'daily') {
+        const dates = Array.from(new Set(parseResult.records.map(r => r.date))).sort();
+        appState.allDates = dates;
+
+        const today = new Date();
+        const yesterdayObj = new Date(today);
+        yesterdayObj.setDate(today.getDate() - 1);
+        const yYear = yesterdayObj.getFullYear();
+        const yMonth = String(yesterdayObj.getMonth() + 1).padStart(2, '0');
+        const yDay = String(yesterdayObj.getDate()).padStart(2, '0');
+        const yesterdayStr = `${yYear}-${yMonth}-${yDay}`;
+
+        if (dates.includes(yesterdayStr)) {
+          appState.selectedDate = yesterdayStr;
+        } else {
+          appState.selectedDate = dates[dates.length - 1];
+        }
+
+        if (appState.activeTab === 'grid') {
+          document.getElementById('dailyRangeContainer').classList.remove('hidden');
+          document.getElementById('dailyRangeContainer').classList.add('flex');
+        }
+      } else {
+        const weeks = Array.from(new Set(parseResult.records.map(r => r.week))).sort((a, b) => a - b);
+        appState.allWeeks = weeks;
+        appState.selectedWeek = weeks[weeks.length - 1];
+        document.getElementById('dailyRangeContainer').classList.add('hidden');
+        document.getElementById('dailyRangeContainer').classList.remove('flex');
+      }
+
+      if (appState.selectedLines.size === 0) {
+        lines.forEach(l => appState.selectedLines.add(l));
+      }
+
+      const modeLabel = appState.mode === 'daily' ? `Daily Mode (${appState.allDates.length} Days)` : `Weekly Mode (W1-W${appState.allWeeks[appState.allWeeks.length - 1]})`;
+      document.getElementById('sourceBadge').textContent = modeLabel;
+      document.getElementById('lineCountBadge').textContent = appState.selectedLines.size;
+
+      buildPeriodDropdown();
+      renderCurrentActiveView();
+    }
+
+    function switchDashboardTab(tabName) {
+      appState.activeTab = tabName;
+      const isGrid = tabName === 'grid';
+
+      document.getElementById('tabGridBtn').className = isGrid
+        ? 'px-3 py-1 rounded-md bg-cyan-600 text-white shadow transition-all flex items-center gap-1.5'
+        : 'px-3 py-1 rounded-md text-slate-300 hover:text-white transition-all flex items-center gap-1.5';
+
+      document.getElementById('tabBarBtn').className = !isGrid
+        ? 'px-3 py-1 rounded-md bg-cyan-600 text-white shadow transition-all flex items-center gap-1.5'
+        : 'px-3 py-1 rounded-md text-slate-300 hover:text-white transition-all flex items-center gap-1.5';
+
+      document.getElementById('tabGridView').classList.toggle('hidden', !isGrid);
+      document.getElementById('tabBarView').classList.toggle('hidden', isGrid);
+      document.getElementById('tabBarView').classList.toggle('flex', !isGrid);
+
+      document.getElementById('layoutPresetsContainer').classList.toggle('hidden', !isGrid);
+      document.getElementById('globalScaleContainer').classList.toggle('hidden', !isGrid);
+      
+      const dailyRange = document.getElementById('dailyRangeContainer');
+      if (appState.mode === 'daily') {
+        dailyRange.classList.toggle('hidden', !isGrid);
+        dailyRange.classList.toggle('flex', isGrid);
+      }
+
+      renderCurrentActiveView();
+    }
+
+    function renderCurrentActiveView() {
+      if (appState.activeTab === 'grid') {
+        renderDynamicCockpitGrid();
+      } else {
+        renderAllLinesBarComparisonChart();
+      }
+    }
+
+    function renderAllLinesBarComparisonChart() {
+      const isDaily = appState.mode === 'daily';
+      const currentPeriod = isDaily ? appState.selectedDate : appState.selectedWeek;
+      const periodFormatted = isDaily ? `Date: ${currentPeriod}` : `Week: ${currentPeriod}`;
+      document.getElementById('barViewPeriodBadge').textContent = periodFormatted;
+
+      const lines = appState.allLines.filter(l => appState.selectedLines.has(l));
+
+      const lineData = lines.map(line => {
+        const rec = appState.recordLookup.get(`${line}_${currentPeriod}`);
+        const actual = rec && rec.actual !== null ? rec.actual : null;
+        let target = rec && rec.target !== null && rec.target > 0 ? rec.target : null;
+        if (!target) {
+          const fallback = appState.rawRecords.find(r => r.lineName === line && r.target !== null && r.target > 0);
+          target = fallback ? fallback.target : 65;
+        }
+
+        let gap = null;
+        let status = 'IDLE';
+
+        if (actual !== null && actual > 0) {
+          gap = Math.round((actual - target) * 10) / 10;
+          if (actual >= target) status = 'GREEN';
+          else if (gap >= -5.0) status = 'YELLOW';
+          else status = 'RED';
+        }
+
+        return { lineName: line, actual: actual, target: target, gap: gap, status: status };
+      });
+
+      lineData.sort((a, b) => {
+        const valA = a.actual !== null ? a.actual : -1;
+        const valB = b.actual !== null ? b.actual : -1;
+        return valB - valA;
+      });
+
+      const runningLines = lineData.filter(d => d.actual !== null && d.actual > 0);
+      if (runningLines.length > 0) {
+        document.getElementById('barTopLine').textContent = `${runningLines[0].lineName} (${runningLines[0].actual}%)`;
+        document.getElementById('barLowestLine').textContent = `${runningLines[runningLines.length - 1].lineName} (${runningLines[runningLines.length - 1].actual}%)`;
+        const avg = Math.round((runningLines.reduce((s, d) => s + d.actual, 0) / runningLines.length) * 10) / 10;
+        document.getElementById('barRunningAvg').textContent = `${avg}%`;
+      } else {
+        document.getElementById('barTopLine').textContent = 'None';
+        document.getElementById('barLowestLine').textContent = 'None';
+        document.getElementById('barRunningAvg').textContent = '0%';
+      }
+
+      const labels = lineData.map(d => d.lineName);
+      const actuals = lineData.map(d => d.actual !== null ? d.actual : 0);
+      const targets = lineData.map(d => d.target);
+
+      const barColors = lineData.map(d => {
+        if (d.status === 'GREEN') return '#10b981';
+        if (d.status === 'YELLOW') return '#f59e0b';
+        if (d.status === 'RED') return '#f43f5e';
+        return '#334155';
+      });
+
+      const ctx = document.getElementById('allLinesBarChartCanvas').getContext('2d');
+      if (allLinesBarChartInstance) allLinesBarChartInstance.destroy();
+
+      allLinesBarChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: 'OEE Actual (%)',
+              data: actuals,
+              backgroundColor: barColors,
+              borderRadius: 5,
+              borderWidth: 0,
+              order: 2
+            },
+            {
+              label: 'Line Target (%)',
+              data: targets,
+              type: 'line',
+              borderColor: '#38bdf8',
+              borderWidth: 0,
+              pointBackgroundColor: '#38bdf8',
+              pointBorderColor: '#ffffff',
+              pointBorderWidth: 1.5,
+              pointRadius: 6,
+              pointHoverRadius: 8,
+              pointStyle: 'rectRot',
+              showLine: false,
+              order: 1
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          onClick: (e, elements) => {
+            if (elements && elements.length > 0) {
+              const clickedIdx = elements[0].index;
+              openDrillDownModal(labels[clickedIdx]);
+            }
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                title: (items) => `${items[0].label} (${periodFormatted})`,
+                label: (context) => {
+                  const item = lineData[context.dataIndex];
+                  if (context.dataset.type === 'line') return `Target: ${item.target}%`;
+                  if (item.actual === null || item.actual === 0) return `Status: IDLE (No production)`;
+                  return `Actual: ${item.actual}% | Gap: ${item.gap >= 0 ? '+' : ''}${item.gap}% [${item.status}]`;
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              ticks: { color: '#94a3b8', font: { size: 10, family: 'Inter', weight: '600' }, maxRotation: 45 },
+              grid: { display: false }
+            },
+            y: {
+              min: 0,
+              max: 105,
+              ticks: { color: '#94a3b8', font: { size: 10, family: 'Inter' }, stepSize: 20, callback: v => v + '%' },
+              grid: { color: 'rgba(51, 65, 85, 0.25)' }
+            }
+          }
+        }
+      });
+    }
+
+    function parseCSV(text) {
+      const lines = text.split(/\r\n|\n|\r/);
+      if (lines.length < 2) return null;
+
+      const headers = lines[0].replace(/\[|\]/g, '').toLowerCase().split(',').map(s => s.trim());
+      const dateIdx = headers.findIndex(h => h.includes('date'));
+      const weekIdx = headers.findIndex(h => h.includes('week'));
+      const lineIdx = headers.findIndex(h => h.includes('line'));
+      const actIdx = headers.findIndex(h => h.includes('actual') || h === 'oee actual');
+      const tarIdx = headers.findIndex(h => h.includes('target') || h === 'oee target');
+
+      if (lineIdx === -1 || actIdx === -1) return null;
+
+      const isDaily = dateIdx !== -1 && weekIdx === -1;
+      const parsed = [];
+
+      if (isDaily) {
+        for (let i = 1; i < lines.length; i++) {
+          const row = lines[i].trim();
+          if (!row) continue;
+          const cols = row.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+          const dateStr = cols[dateIdx];
+          const line = cols[lineIdx];
+          if (!dateStr || !line) continue;
+
+          const rawAct = cols[actIdx];
+          const rawTar = cols[tarIdx];
+          const act = (rawAct !== '' && !isNaN(parseFloat(rawAct))) ? parseFloat(rawAct) : null;
+          const tar = (rawTar !== '' && !isNaN(parseFloat(rawTar))) ? parseFloat(rawTar) : null;
+
+          parsed.push({ date: dateStr, lineName: line, actual: act, target: tar });
+        }
+        return { mode: 'daily', records: parsed };
+      } else {
+        for (let i = 1; i < lines.length; i++) {
+          const row = lines[i].trim();
+          if (!row) continue;
+          const cols = row.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+          const w = parseInt(cols[weekIdx], 10);
+          const line = cols[lineIdx];
+          if (isNaN(w) || !line) continue;
+
+          const rawAct = cols[actIdx];
+          const rawTar = cols[tarIdx];
+          const act = (rawAct !== '' && !isNaN(parseFloat(rawAct))) ? parseFloat(rawAct) : null;
+          const tar = (rawTar !== '' && !isNaN(parseFloat(rawTar))) ? parseFloat(rawTar) : null;
+
+          parsed.push({ week: w, lineName: line, actual: act, target: tar });
+        }
+        return { mode: 'weekly', records: parsed };
+      }
+    }
+
+    function calculateLineScale(actuals, target, mode = appState.globalScaleMode) {
+      if (mode === '0-100') return { min: 0, max: 100, defaultMin: 0, defaultMax: 100 };
+      if (mode === '30-100') return { min: 30, max: 100, defaultMin: 30, defaultMax: 100 };
+      if (mode === '50-100') return { min: 50, max: 100, defaultMin: 50, defaultMax: 100 };
+
+      const validActuals = actuals.filter(v => v !== null && v !== undefined && v > 0);
+      if (validActuals.length === 0) return { min: 0, max: 100, defaultMin: 0, defaultMax: 100 };
+
+      const allValues = [...validActuals];
+      if (target !== null && target !== undefined && target > 0) allValues.push(target);
+
+      const dataMin = Math.min(...allValues);
+      const dataMax = Math.max(...allValues);
+      const span = Math.max(10, dataMax - dataMin);
+      const padding = Math.max(3, span * 0.15);
+
+      let scaleMin = Math.max(0, Math.floor((dataMin - padding) / 5) * 5);
+      let scaleMax = Math.min(100, Math.ceil((dataMax + padding) / 5) * 5);
+
+      if (scaleMax - scaleMin < 15) {
+        scaleMin = Math.max(0, scaleMin - 5);
+        scaleMax = Math.min(100, scaleMax + 5);
+      }
+
+      return { min: scaleMin, max: scaleMax, defaultMin: scaleMin, defaultMax: scaleMax };
+    }
+
+    function getDynamicGridSpec(count) {
+      if (count <= 1) return { cols: 1, rows: 1 };
+      if (count === 2) return { cols: 2, rows: 1 };
+      if (count <= 4) return { cols: 2, rows: 2 };
+      if (count <= 6) return { cols: 3, rows: 2 };
+      if (count <= 8) return { cols: 4, rows: 2 };
+      if (count <= 9) return { cols: 3, rows: 3 };
+      if (count <= 12) return { cols: 4, rows: 3 };
+      if (count <= 16) return { cols: 4, rows: 4 };
+      if (count <= 20) return { cols: 5, rows: 4 };
+      return { cols: 5, rows: 5 };
+    }
+
+    // High Saturation / Contrast Solid Gradients
+    function renderDynamicCockpitGrid() {
+      const container = document.getElementById('dynamicLineGrid');
+      
+      gridChartInstances.forEach(c => c.destroy());
+      gridChartInstances.clear();
+      container.innerHTML = '';
+
+      const lines = appState.allLines.filter(l => appState.selectedLines.has(l));
+      const count = lines.length;
+
+      if (count === 0) {
+        container.innerHTML = `
+          <div class="col-span-full h-full flex flex-col items-center justify-center text-slate-500 gap-2">
+            <p>No production lines selected. Click "Lines" above to configure.</p>
+          </div>
+        `;
+        return;
+      }
+
+      const gridSpec = getDynamicGridSpec(count);
+      container.style.gridTemplateColumns = `repeat(${gridSpec.cols}, minmax(0, 1fr))`;
+      container.style.gridTemplateRows = `repeat(${gridSpec.rows}, minmax(0, 1fr))`;
+
+      const isDaily = appState.mode === 'daily';
+      const currentPeriod = isDaily ? appState.selectedDate : appState.selectedWeek;
+
+      let trendPeriods = [];
+      let trendLabels = [];
+
+      if (isDaily) {
+        const currIdx = appState.allDates.indexOf(appState.selectedDate);
+        const effectiveIdx = currIdx !== -1 ? currIdx : appState.allDates.length - 1;
+        
+        let span = 14;
+        if (appState.dailyTrendDays === 'all') span = appState.allDates.length;
+        else if (appState.dailyTrendDays === 30) span = 30;
+
+        const startIdx = Math.max(0, effectiveIdx - span + 1);
+        trendPeriods = appState.allDates.slice(startIdx, effectiveIdx + 1);
+        trendLabels = trendPeriods.map(d => formatDisplayDate(d));
+      } else {
+        trendPeriods = appState.allWeeks;
+        trendLabels = trendPeriods.map(w => `W${w}`);
+      }
+
+      lines.forEach((line, idx) => {
+        const currentRec = appState.recordLookup.get(`${line}_${currentPeriod}`);
+        const actual = currentRec && currentRec.actual !== null ? currentRec.actual : null;
+        
+        let target = currentRec && currentRec.target !== null && currentRec.target > 0 ? currentRec.target : null;
+        if (target === null) {
+          const fallback = appState.rawRecords.find(r => r.lineName === line && r.target !== null && r.target > 0);
+          target = fallback ? fallback.target : 65;
+        }
+
+        let gap = null;
+        let status = 'IDLE';
+
+        if (actual !== null && actual > 0) {
+          gap = Math.round((actual - target) * 10) / 10;
+          if (actual >= target) status = 'GREEN';
+          else if (gap >= -5.0) status = 'YELLOW';
+          else status = 'RED';
+        }
+
+        let borderClass = '';
+        let topBarClass = '';
+        let badgeBg = '';
+        let oeeColor = '';
+        let glowShadow = '';
+        let dotClass = '';
+        let titleColor = 'text-white';
+        let periodBadgeClass = 'bg-cyan-950 text-cyan-300 border-cyan-700/80';
+
+        if (status === 'GREEN') {
+          borderClass = 'border-2 border-emerald-400 bg-gradient-to-b from-[#064e3b] via-[#043427] to-[#021f17]';
+          topBarClass = 'border-t-4 border-t-emerald-300';
+          badgeBg = 'bg-emerald-400 text-slate-950 font-black shadow-md shadow-emerald-500/50';
+          oeeColor = 'text-emerald-300 drop-shadow-[0_0_12px_rgba(52,211,153,0.7)]';
+          glowShadow = 'shadow-xl shadow-emerald-950/90';
+          dotClass = 'w-2.5 h-2.5 rounded-full bg-emerald-300 dot-indicator dot-glow-green shrink-0';
+        } else if (status === 'YELLOW') {
+          borderClass = 'border-2 border-amber-400 bg-gradient-to-b from-[#451a03] via-[#2e1202] to-[#1c0b01]';
+          topBarClass = 'border-t-4 border-t-amber-300';
+          badgeBg = 'bg-amber-400 text-slate-950 font-black shadow-md shadow-amber-400/50';
+          oeeColor = 'text-amber-300 drop-shadow-[0_0_12px_rgba(251,191,36,0.7)]';
+          glowShadow = 'shadow-xl shadow-amber-950/90';
+          dotClass = 'w-2.5 h-2.5 rounded-full bg-amber-300 dot-indicator dot-glow-amber shrink-0';
+        } else if (status === 'RED') {
+          borderClass = 'border-2 border-rose-500 bg-gradient-to-b from-[#4c0519] via-[#350511] to-[#1f030a]';
+          topBarClass = 'border-t-4 border-t-rose-400';
+          badgeBg = 'bg-rose-500 text-white font-black shadow-md shadow-rose-600/60';
+          oeeColor = 'text-rose-400 drop-shadow-[0_0_12px_rgba(244,63,94,0.7)]';
+          glowShadow = 'shadow-xl shadow-rose-950/90';
+          dotClass = 'w-2.5 h-2.5 rounded-full bg-rose-400 dot-indicator dot-glow-red shrink-0';
+        } else {
+          borderClass = 'border border-slate-800/90 bg-[#060a14] opacity-75 hover:opacity-100 hover:border-slate-700';
+          topBarClass = 'border-t-2 border-t-slate-700/60';
+          badgeBg = 'bg-slate-800/90 text-slate-400 font-semibold border border-slate-700/60';
+          oeeColor = 'text-slate-500';
+          glowShadow = '';
+          dotClass = 'w-2 h-2 rounded-full bg-slate-600 shrink-0';
+          titleColor = 'text-slate-400 group-hover:text-slate-200';
+          periodBadgeClass = 'bg-slate-800/80 text-slate-400 border-slate-700/70';
+        }
+
+        const actuals = trendPeriods.map(p => {
+          const rec = appState.recordLookup.get(`${line}_${p}`);
+          return rec ? rec.actual : null;
+        });
+        const targets = trendPeriods.map(p => {
+          const rec = appState.recordLookup.get(`${line}_${p}`);
+          return rec && rec.target !== null && rec.target > 0 ? rec.target : target;
+        });
+
+        const initialScale = calculateLineScale(actuals, target);
+
+        const periodHeaderBadgeText = isDaily ? formatDisplayDate(currentPeriod) : `W${currentPeriod}`;
+        const periodMetricLabelText = isDaily ? formatDisplayDate(currentPeriod) : `W${currentPeriod}`;
+
+        const card = document.createElement('div');
+        card.className = `h-full flex flex-col ${borderClass} ${topBarClass} ${glowShadow} rounded-xl p-2 sm:p-2.5 transition-all hover:scale-[1.008] cursor-pointer group select-none min-h-0 relative`;
+        
+        card.onclick = (e) => {
+          if (Date.now() - (window.__justDraggedTime || 0) < 300) return;
+          if (e.target.closest('button') || e.target.closest('select')) return;
+          openDrillDownModal(line);
+        };
+
+        const canvasId = `miniTrend_${idx}`;
+        const scaleBadgeId = `scaleBadge_${idx}`;
+
+        card.innerHTML = `
+          <div class="flex items-center justify-between gap-1 shrink-0">
+            <div class="flex items-center gap-1.5 min-w-0">
+              <span class="${dotClass}"></span>
+              <span class="font-black text-xs sm:text-sm ${titleColor} truncate transition-colors" title="${line}">${line}</span>
+              <span class="text-[10px] sm:text-[11px] font-black font-mono px-1.5 py-0.2 rounded border shadow-sm shrink-0 ${periodBadgeClass}">
+                ${periodHeaderBadgeText}
+              </span>
+            </div>
+            
+            <div class="flex items-center gap-1 shrink-0">
+              <span class="text-[10px] px-1.5 py-0.5 rounded font-mono font-black ${badgeBg}">
+                ${actual !== null && actual > 0 ? (gap >= 0 ? '+' : '') + gap.toFixed(1) + '%' : 'IDLE'}
+              </span>
+            </div>
+          </div>
+
+          <div class="flex items-baseline justify-between mt-1 shrink-0">
+            <div class="flex items-baseline gap-2">
+              <div class="flex flex-col leading-none">
+                <span class="text-[9px] text-slate-400 font-medium">Actual (${periodMetricLabelText})</span>
+                <span class="text-base sm:text-xl font-black font-mono ${oeeColor} mt-0.5">
+                  ${actual !== null && actual > 0 ? actual.toFixed(1) + '%' : 'IDLE'}
+                </span>
+              </div>
+              <div class="flex flex-col leading-none ml-1">
+                <span class="text-[9px] text-slate-400 font-medium">Target</span>
+                <span class="text-xs sm:text-sm font-bold font-mono text-slate-200 mt-0.5">
+                  ${target}%
+                </span>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-0.5 bg-[#0e162a]/90 border border-slate-700/70 p-0.5 rounded text-[9px]" onclick="event.stopPropagation()">
+              <span id="${scaleBadgeId}" class="px-1 py-0.2 font-mono text-slate-400" title="Current Y-Axis Scale">
+                ↕${initialScale.min}-${initialScale.max}%
+              </span>
+              <button onclick="zoomCardChart('${canvasId}', 0.85, '${scaleBadgeId}')" class="w-3.5 h-3.5 rounded bg-[#14203a] hover:bg-cyan-600 text-slate-300 hover:text-white flex items-center justify-center font-bold" title="Zoom In">+</button>
+              <button onclick="zoomCardChart('${canvasId}', 1.15, '${scaleBadgeId}')" class="w-3.5 h-3.5 rounded bg-[#14203a] hover:bg-cyan-600 text-slate-300 hover:text-white flex items-center justify-center font-bold" title="Zoom Out">-</button>
+              <button onclick="resetCardChart('${canvasId}', '${scaleBadgeId}')" class="w-3.5 h-3.5 rounded bg-[#14203a] hover:bg-cyan-600 text-slate-300 hover:text-white flex items-center justify-center font-bold text-[8px]" title="Reset Scale">⟲</button>
+            </div>
+          </div>
+
+          <div class="flex-1 min-h-0 w-full relative mt-1 overflow-hidden" title="Drag vertically to pan Y-axis scale | Scroll wheel to zoom | Double-click to reset">
+            <canvas id="${canvasId}" class="chart-canvas"></canvas>
+          </div>
+        `;
+
+        container.appendChild(card);
+
+        const canvas = document.getElementById(canvasId);
+        if (canvas) {
+          const ctx = canvas.getContext('2d');
+          const isIdle = status === 'IDLE';
+          const actualColor = status === 'GREEN' ? '#34d399' : status === 'YELLOW' ? '#fbbf24' : status === 'RED' ? '#f43f5e' : '#64748b';
+          const fillColor = status === 'GREEN' ? 'rgba(52, 211, 153, 0.25)' : status === 'YELLOW' ? 'rgba(251, 191, 36, 0.25)' : status === 'RED' ? 'rgba(244, 63, 94, 0.25)' : 'transparent';
+          const targetColor = isIdle ? 'rgba(56, 189, 248, 0.45)' : '#38bdf8';
+
+          const pointRadii = trendPeriods.map(p => p === currentPeriod && actual !== null && actual > 0 ? 4 : 0);
+          const pointBgs = trendPeriods.map(p => p === currentPeriod ? '#ffffff' : actualColor);
+
+          const chartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+              labels: trendLabels,
+              datasets: [
+                {
+                  label: 'Actual',
+                  data: actuals,
+                  borderColor: actualColor,
+                  backgroundColor: fillColor,
+                  borderWidth: isIdle ? 1.5 : 2.4,
+                  fill: !isIdle,
+                  tension: 0.25,
+                  pointRadius: pointRadii,
+                  pointBackgroundColor: pointBgs,
+                  pointBorderColor: actualColor,
+                  pointBorderWidth: 2,
+                  pointHoverRadius: 4
+                },
+                {
+                  label: 'Target',
+                  data: targets,
+                  borderColor: targetColor,
+                  borderWidth: isIdle ? 1.4 : 2,
+                  borderDash: [5, 4],
+                  pointRadius: 0,
+                  tension: 0
+                }
+              ]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              interaction: { mode: 'index', intersect: false },
+              plugins: {
+                legend: { display: false },
+                tooltip: {
+                  enabled: true,
+                  callbacks: {
+                    title: (items) => `${line} - ${items[0].label}`,
+                    label: (context) => `${context.dataset.label}: ${context.parsed.y !== null && context.parsed.y > 0 ? context.parsed.y + '%' : 'Idle'}`
+                  }
+                }
+              },
+              scales: {
+                x: {
+                  display: true,
+                  ticks: { maxTicksLimit: 6, font: { size: 9, family: 'Inter' }, color: '#64748b' },
+                  grid: { display: false }
+                },
+                y: {
+                  min: initialScale.min,
+                  max: initialScale.max,
+                  ticks: { maxTicksLimit: 5, font: { size: 9, family: 'Inter' }, color: '#94a3b8', callback: v => Math.round(v) + '%' },
+                  grid: { color: 'rgba(51, 65, 85, 0.25)' }
+                }
+              }
+            }
+          });
+
+          chartInstance.__defaultScale = initialScale;
+          attachChartDragAndZoom(canvas, chartInstance, initialScale, document.getElementById(scaleBadgeId), line);
+          gridChartInstances.set(canvasId, chartInstance);
+        }
+      });
+    }
+
+    function applyScaleToChart(chartInstance, minVal, maxVal) {
+      chartInstance.options.scales.y.min = minVal;
+      chartInstance.options.scales.y.max = maxVal;
+      if (chartInstance.scales && chartInstance.scales.y) {
+        chartInstance.scales.y.options.min = minVal;
+        chartInstance.scales.y.options.max = maxVal;
+        chartInstance.scales.y.min = minVal;
+        chartInstance.scales.y.max = maxVal;
+      }
+      chartInstance.update('none');
+    }
+
+    function resetChartScale(chartInstance, defaultScale, badgeElem) {
+      applyScaleToChart(chartInstance, defaultScale.defaultMin, defaultScale.defaultMax);
+      chartInstance.update();
+      if (badgeElem) {
+        badgeElem.textContent = `↕${defaultScale.defaultMin}-${defaultScale.defaultMax}%`;
+        badgeElem.className = 'px-1 py-0.2 font-mono text-slate-400';
+      }
+    }
+
+    function attachChartDragAndZoom(canvas, chartInstance, defaultScale, badgeElem, lineName) {
+      let isDragging = false;
+      let hasMoved = false;
+      let startY = 0;
+      let startMin = defaultScale.min;
+      let startMax = defaultScale.max;
+
+      canvas.style.touchAction = 'none';
+
+      canvas.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+        isDragging = true;
+        hasMoved = false;
+        startY = e.clientY;
+        startMin = chartInstance.options.scales.y.min !== undefined ? chartInstance.options.scales.y.min : defaultScale.min;
+        startMax = chartInstance.options.scales.y.max !== undefined ? chartInstance.options.scales.y.max : defaultScale.max;
+        canvas.style.cursor = 'grabbing';
+      });
+
+      canvas.addEventListener('pointermove', (e) => {
+        if (!isDragging) return;
+        const deltaY = e.clientY - startY;
+
+        if (Math.abs(deltaY) > 2) {
+          hasMoved = true;
+          e.preventDefault();
+        }
+
+        if (hasMoved) {
+          const span = startMax - startMin;
+          const rect = canvas.getBoundingClientRect();
+          const canvasH = Math.max(40, rect.height);
+          const shift = (deltaY / canvasH) * span * 0.85;
+
+          let newMin = Math.round((startMin - shift) * 10) / 10;
+          let newMax = Math.round((startMax - shift) * 10) / 10;
+
+          if (newMin < 0) { newMax += (0 - newMin); newMin = 0; }
+          if (newMax > 120) { newMin -= (newMax - 120); newMax = 120; }
+          if (newMin < 0) newMin = 0;
+
+          applyScaleToChart(chartInstance, newMin, newMax);
+
+          if (badgeElem) {
+            badgeElem.textContent = `↕${Math.round(newMin)}-${Math.round(newMax)}%`;
+            badgeElem.className = 'px-1 py-0.2 font-mono font-bold text-cyan-300 bg-cyan-950 border border-cyan-700 rounded shadow-sm';
+          }
+        }
+      });
+
+      const onPointerEnd = (e) => {
+        if (isDragging) {
+          try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+          isDragging = false;
+          canvas.style.cursor = 'ns-resize';
+          if (hasMoved) window.__justDraggedTime = Date.now();
+        }
+      };
+
+      canvas.addEventListener('pointerup', onPointerEnd);
+      canvas.addEventListener('pointercancel', onPointerEnd);
+      canvas.addEventListener('lostpointercapture', onPointerEnd);
+
+      canvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const currentMin = chartInstance.options.scales.y.min !== undefined ? chartInstance.options.scales.y.min : defaultScale.min;
+        const currentMax = chartInstance.options.scales.y.max !== undefined ? chartInstance.options.scales.y.max : defaultScale.max;
+        const span = currentMax - currentMin;
+        
+        const zoomFactor = e.deltaY > 0 ? 1.15 : 0.85;
+        const newSpan = Math.max(8, Math.min(120, span * zoomFactor));
+        const center = (currentMin + currentMax) / 2;
+
+        let newMin = Math.max(0, Math.round((center - newSpan / 2) * 10) / 10);
+        let newMax = Math.min(120, Math.round((center + newSpan / 2) * 10) / 10);
+
+        applyScaleToChart(chartInstance, newMin, newMax);
+
+        if (badgeElem) {
+          badgeElem.textContent = `↕${Math.round(newMin)}-${Math.round(newMax)}%`;
+          badgeElem.className = 'px-1 py-0.2 font-mono font-bold text-cyan-300 bg-cyan-950 border border-cyan-700 rounded shadow-sm';
+        }
+      }, { passive: false });
+
+      canvas.addEventListener('dblclick', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        resetChartScale(chartInstance, defaultScale, badgeElem);
+        showToast(`Reset scale for ${lineName} to Auto`, 'info');
+      });
+    }
+
+    function zoomCardChart(canvasId, factor, badgeId) {
+      const chart = gridChartInstances.get(canvasId);
+      if (!chart) return;
+      const currentMin = chart.options.scales.y.min !== undefined ? chart.options.scales.y.min : 0;
+      const currentMax = chart.options.scales.y.max !== undefined ? chart.options.scales.y.max : 100;
+      const span = currentMax - currentMin;
+      const newSpan = Math.max(8, Math.min(120, span * factor));
+      const center = (currentMin + currentMax) / 2;
+
+      let newMin = Math.max(0, Math.round((center - newSpan / 2) * 10) / 10);
+      let newMax = Math.min(120, Math.round((center + newSpan / 2) * 10) / 10);
+
+      applyScaleToChart(chart, newMin, newMax);
+      const badge = document.getElementById(badgeId);
+      if (badge) {
+        badge.textContent = `↕${Math.round(newMin)}-${Math.round(newMax)}%`;
+        badge.className = 'px-1 py-0.2 font-mono font-bold text-cyan-300 bg-cyan-950 border border-cyan-700 rounded shadow-sm';
+      }
+    }
+
+    function resetCardChart(canvasId, badgeId) {
+      const chart = gridChartInstances.get(canvasId);
+      if (!chart || !chart.__defaultScale) return;
+      resetChartScale(chart, chart.__defaultScale, document.getElementById(badgeId));
+      showToast('Scale reset to Auto', 'info');
+    }
+
+    function onGlobalScaleChange(val) {
+      appState.globalScaleMode = val;
+      renderCurrentActiveView();
+      const label = val === 'auto' ? 'Auto Scale' : `${val}%`;
+      showToast(`Global scale set to: ${label}`, 'info');
+    }
+
+    function onDailyRangeChange(val) {
+      appState.dailyTrendDays = val === 'all' ? 'all' : parseInt(val, 10);
+      renderDynamicCockpitGrid();
+      showToast(`Daily mini trend set to: ${val === 'all' ? 'All Days' : 'Last ' + val + ' Days'}`, 'info');
+    }
+
+    // Modal Operations with Try/Catch and Null-Checks
+    function openDrillDownModal(lineName) {
+      try {
+        appState.activeModalLine = lineName;
+        const modal = document.getElementById('drillDownModal');
+        if (!modal) return;
+        const isDaily = appState.mode === 'daily';
+
+        const currentPeriod = isDaily ? appState.selectedDate : appState.selectedWeek;
+        const records = appState.rawRecords.filter(r => r.lineName === lineName);
+
+        const curRec = appState.recordLookup.get(`${lineName}_${currentPeriod}`);
+        const curAct = curRec && curRec.actual !== null ? curRec.actual : null;
+        let target = curRec && curRec.target !== null && curRec.target > 0 ? curRec.target : null;
+        if (target === null) {
+          const fb = records.find(r => r.target !== null && r.target > 0);
+          target = fb ? fb.target : 65;
+        }
+
+        const periodFormatted = isDaily ? formatDisplayDate(currentPeriod, true) : `Week ${currentPeriod}`;
+        document.getElementById('modalLineTitle').textContent = lineName;
+        document.getElementById('modalPeriodBadge').textContent = periodFormatted;
+        document.getElementById('modalActLabel').textContent = `OEE Actual (${periodFormatted})`;
+        document.getElementById('modalActOee').textContent = curAct !== null && curAct > 0 ? `${curAct.toFixed(1)}%` : 'IDLE';
+        document.getElementById('modalTargetLabel').textContent = `Target: ${target}% (${periodFormatted})`;
+
+        const gapVal = document.getElementById('modalGapVal');
+        const gapSub = document.getElementById('modalGapSubtext');
+        const statusBadge = document.getElementById('modalStatusBadge');
+
+        if (curAct !== null && curAct > 0) {
+          const gap = Math.round((curAct - target) * 10) / 10;
+          gapVal.textContent = (gap >= 0 ? '+' : '') + gap + '%';
+          gapVal.className = `text-2xl font-black ${gap >= 0 ? 'text-emerald-400' : 'text-rose-400'} mt-1`;
+          gapSub.textContent = gap >= 0 ? 'Above Target' : 'Below Target';
+
+          if (curAct >= target) {
+            statusBadge.textContent = 'PASS';
+            statusBadge.className = 'text-[11px] px-2.5 py-0.5 rounded font-black uppercase bg-emerald-500 text-slate-950 shadow-sm shadow-emerald-500/50';
+          } else if (gap >= -5.0) {
+            statusBadge.textContent = 'WARN';
+            statusBadge.className = 'text-[11px] px-2.5 py-0.5 rounded font-black uppercase bg-amber-400 text-slate-950 shadow-sm shadow-amber-400/50';
+          } else {
+            statusBadge.textContent = 'CRITICAL';
+            statusBadge.className = 'text-[11px] px-2.5 py-0.5 rounded font-black uppercase bg-rose-600 text-white shadow-sm shadow-rose-600/50';
+          }
+        } else {
+          gapVal.textContent = '-';
+          gapVal.className = 'text-2xl font-black text-slate-400 mt-1';
+          gapSub.textContent = 'Line is currently idle';
+          statusBadge.textContent = 'IDLE';
+          statusBadge.className = 'text-[11px] px-2.5 py-0.5 rounded font-semibold uppercase bg-slate-800 text-slate-400 border border-slate-700/60';
+        }
+
+        const allPeriods = isDaily ? appState.allDates : appState.allWeeks;
+        const runningPeriods = records.filter(r => r.actual !== null && r.actual > 0);
+        const hitPeriods = runningPeriods.filter(r => r.actual >= (r.target ?? target));
+
+        const avgOee = runningPeriods.length > 0 
+          ? Math.round((runningPeriods.reduce((sum, item) => sum + item.actual, 0) / runningPeriods.length) * 10) / 10 
+          : null;
+        const hitRate = runningPeriods.length > 0 
+          ? Math.round((hitPeriods.length / runningPeriods.length) * 1000) / 10 
+          : 0;
+
+        const periodUnit = isDaily ? 'Days' : 'Weeks';
+        document.getElementById('modalAvgLabel').textContent = isDaily ? 'Daily Avg OEE' : 'YTD Avg OEE';
+        document.getElementById('modalAvgOee').textContent = avgOee !== null ? `${avgOee}%` : '-';
+        document.getElementById('modalOperatingRatio').textContent = `Active ${runningPeriods.length}/${allPeriods.length} ${periodUnit}`;
+        document.getElementById('modalHitRate').textContent = `${hitRate}%`;
+        document.getElementById('modalHitWeeks').textContent = `Achieved ${hitPeriods.length} of ${runningPeriods.length} ${periodUnit}`;
+
+        const modalCanvas = document.getElementById('modalTrendCanvas');
+        const ctx = modalCanvas.getContext('2d');
+        if (modalTrendChartInstance) modalTrendChartInstance.destroy();
+
+        const modalLabels = isDaily ? allPeriods.map(d => formatDisplayDate(d)) : allPeriods.map(w => `W${w}`);
+        const actuals = allPeriods.map(p => {
+          const r = appState.recordLookup.get(`${lineName}_${p}`);
+          return r ? r.actual : null;
+        });
+        const targets = allPeriods.map(p => {
+          const r = appState.recordLookup.get(`${lineName}_${p}`);
+          return r && r.target !== null && r.target > 0 ? r.target : target;
+        });
+
+        modalDefaultScale = calculateLineScale(actuals, target, 'auto');
+        const modalBadge = document.getElementById('modalScaleBadge');
+        modalBadge.textContent = `↕ ${modalDefaultScale.min}-${modalDefaultScale.max}% (Auto)`;
+
+        const pointRadii = allPeriods.map(p => p === currentPeriod && curAct !== null && curAct > 0 ? 5 : (isDaily ? 0 : 2));
+        const pointBgs = allPeriods.map(p => p === currentPeriod ? '#ffffff' : '#06b6d4');
+
+        modalTrendChartInstance = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: modalLabels,
+            datasets: [
+              {
+                label: `${lineName} Actual`,
+                data: actuals,
+                borderColor: '#06b6d4',
+                backgroundColor: 'rgba(6, 182, 212, 0.15)',
+                borderWidth: 2.2,
+                fill: true,
+                tension: 0.25,
+                pointRadius: pointRadii,
+                pointBackgroundColor: pointBgs,
+                pointBorderColor: '#06b6d4',
+                pointBorderWidth: 2,
+                pointHoverRadius: 6
+              },
+              {
+                label: 'Target',
+                data: targets,
+                borderColor: '#38bdf8',
+                borderWidth: 2,
+                borderDash: [5, 4],
+                pointRadius: 0
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { display: false } },
+            scales: {
+              x: { ticks: { font: { size: 10, family: 'Inter' }, color: '#94a3b8', maxTicksLimit: 14 }, grid: { display: false } },
+              y: {
+                min: modalDefaultScale.min,
+                max: modalDefaultScale.max,
+                ticks: { callback: v => Math.round(v) + '%', color: '#94a3b8' },
+                grid: { color: '#1e293b' }
+              }
+            }
+          }
+        });
+
+        attachChartDragAndZoom(modalCanvas, modalTrendChartInstance, modalDefaultScale, modalBadge, lineName);
+
+        document.getElementById('modalColPeriod').textContent = isDaily ? 'Date' : 'Week';
+        const tbody = document.getElementById('modalTableBody');
+        tbody.innerHTML = '';
+
+        allPeriods.slice().reverse().forEach(p => {
+          const r = appState.recordLookup.get(`${lineName}_${p}`);
+          const act = r && r.actual !== null ? r.actual : null;
+          const tar = r && r.target !== null && r.target > 0 ? r.target : target;
+
+          let statusText = 'IDLE';
+          let statusClass = 'text-slate-400 font-medium';
+          let gapStr = '-';
+
+          if (act !== null && act > 0) {
+            const g = Math.round((act - tar) * 10) / 10;
+            gapStr = (g >= 0 ? '+' : '') + g.toFixed(1) + '%';
+            if (act >= tar) {
+              statusText = 'PASS';
+              statusClass = 'text-emerald-400 font-bold';
+            } else if (g >= -5.0) {
+              statusText = 'WARN';
+              statusClass = 'text-amber-400 font-bold';
+            } else {
+              statusText = 'CRITICAL';
+              statusClass = 'text-rose-400 font-bold';
+            }
+          }
+
+          const isCurrent = p === currentPeriod;
+          const rowLabel = isDaily ? p : `Week ${p}`;
+          const tr = document.createElement('tr');
+          tr.className = isCurrent ? 'bg-cyan-950/60 font-black border-l-4 border-cyan-400 cursor-pointer' : 'hover:bg-[#14203a]/50 cursor-pointer';
+          tr.title = `Click to switch view to ${rowLabel}`;
+          tr.onclick = () => {
+            onPeriodChange(p);
+            openDrillDownModal(lineName);
+          };
+
+          tr.innerHTML = `
+            <td class="py-1.5 px-3 font-mono ${isCurrent ? 'text-cyan-300 font-black' : 'text-slate-300'}">${rowLabel} ${isCurrent ? '★' : ''}</td>
+            <td class="py-1.5 px-3 text-right font-mono ${act !== null && act > 0 ? 'text-white font-bold' : 'text-slate-500'}">${act !== null && act > 0 ? act.toFixed(1) + '%' : '-'}</td>
+            <td class="py-1.5 px-3 text-right font-mono text-slate-400">${tar}%</td>
+            <td class="py-1.5 px-3 text-right font-mono font-bold ${gapStr.startsWith('+') ? 'text-emerald-400' : gapStr.startsWith('-') ? 'text-rose-400' : 'text-slate-500'}">${gapStr}</td>
+            <td class="py-1.5 px-3 text-center ${statusClass}">${statusText}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+
+        modal.classList.remove('hidden');
+      } catch (err) {
+        console.error('Modal error:', err);
+      }
+    }
+
+    function zoomModalChart(factor) {
+      if (!modalTrendChartInstance) return;
+      const currentMin = modalTrendChartInstance.options.scales.y.min !== undefined ? modalTrendChartInstance.options.scales.y.min : 0;
+      const currentMax = modalTrendChartInstance.options.scales.y.max !== undefined ? modalTrendChartInstance.options.scales.y.max : 100;
+      const span = currentMax - currentMin;
+      const newSpan = Math.max(8, Math.min(120, span * factor));
+      const center = (currentMin + currentMax) / 2;
+
+      let newMin = Math.max(0, Math.round((center - newSpan / 2) * 10) / 10);
+      let newMax = Math.min(120, Math.round((center + newSpan / 2) * 10) / 10);
+
+      applyScaleToChart(modalTrendChartInstance, newMin, newMax);
+      document.getElementById('modalScaleBadge').textContent = `↕ ${Math.round(newMin)}-${Math.round(newMax)}%`;
+    }
+
+    function resetModalChartScale() {
+      if (!modalTrendChartInstance) return;
+      applyScaleToChart(modalTrendChartInstance, modalDefaultScale.defaultMin, modalDefaultScale.defaultMax);
+      document.getElementById('modalScaleBadge').textContent = `↕ ${modalDefaultScale.defaultMin}-${modalDefaultScale.defaultMax}% (Auto)`;
+      showToast('Scale reset to Auto', 'info');
+    }
+
+    function closeDrillDownModal() {
+      const m = document.getElementById('drillDownModal');
+      if (m) m.classList.add('hidden');
+    }
+
+    function applyLinePreset(type) {
+      const isDaily = appState.mode === 'daily';
+      const currentPeriod = isDaily ? appState.selectedDate : appState.selectedWeek;
+
+      if (type === 'all') {
+        appState.selectedLines.clear();
+        appState.allLines.forEach(l => appState.selectedLines.add(l));
+      } else if (type === 'active') {
+        const activeLines = appState.rawRecords
+          .filter(r => (isDaily ? r.date === currentPeriod : r.week === currentPeriod) && r.actual !== null && r.actual > 0)
+          .map(r => r.lineName);
+
+        if (activeLines.length > 0) {
+          appState.selectedLines.clear();
+          activeLines.forEach(l => appState.selectedLines.add(l));
+        } else {
+          showToast(`No active running lines found`, 'warning');
+          return;
+        }
+      } else {
+        let count = 4;
+        if (type === 'top6') count = 6;
+        if (type === 'top8') count = 8;
+        appState.selectedLines.clear();
+        appState.allLines.slice(0, count).forEach(l => appState.selectedLines.add(l));
+      }
+
+      document.getElementById('lineCountBadge').textContent = appState.selectedLines.size;
+      renderCurrentActiveView();
+      showToast(`Layout updated: ${appState.selectedLines.size} lines visible`, 'info');
+    }
+
+    function openLineSetupModal() {
+      appState.tempModalLines = new Set(appState.selectedLines);
+      document.getElementById('lineSetupSearchInput').value = '';
+      buildLineSetupList('');
+      document.getElementById('lineSetupModal').classList.remove('hidden');
+    }
+
+    function closeLineSetupModal() {
+      document.getElementById('lineSetupModal').classList.add('hidden');
+    }
+
+    function buildLineSetupList(search = '') {
+      const container = document.getElementById('lineSetupListContainer');
+      container.innerHTML = '';
+      const filtered = appState.allLines.filter(l => l.toLowerCase().includes(search.toLowerCase()));
+
+      filtered.forEach(line => {
+        const isChecked = appState.tempModalLines.has(line);
+        const label = document.createElement('label');
+        label.className = `flex items-center gap-1.5 p-1.5 rounded hover:bg-[#14203a] cursor-pointer ${isChecked ? 'text-cyan-300 font-bold bg-cyan-950/30' : 'text-slate-400'}`;
+        label.innerHTML = `
+          <input type="checkbox" value="${line}" ${isChecked ? 'checked' : ''} class="line-setup-chk rounded bg-[#080e1c] border-slate-700 text-cyan-500 focus:ring-0 cursor-pointer">
+          <span class="truncate">${line}</span>
+        `;
+        container.appendChild(label);
+      });
+      document.getElementById('lineSetupSummary').textContent = `Selected ${appState.tempModalLines.size} of ${appState.allLines.length} lines`;
+    }
+
+    function filterLineSetupList(val) { buildLineSetupList(val); }
+
+    function toggleAllLinesSelection(select) {
+      if (select) {
+        appState.allLines.forEach(l => appState.tempModalLines.add(l));
+      } else {
+        appState.tempModalLines.clear();
+      }
+      buildLineSetupList(document.getElementById('lineSetupSearchInput').value);
+    }
+
+    document.getElementById('lineSetupListContainer').addEventListener('change', (e) => {
+      if (e.target.classList.contains('line-setup-chk')) {
+        const val = e.target.value;
+        if (e.target.checked) appState.tempModalLines.add(val);
+        else appState.tempModalLines.delete(val);
+        document.getElementById('lineSetupSummary').textContent = `Selected ${appState.tempModalLines.size} of ${appState.allLines.length} lines`;
+      }
+    });
+
+    function saveLineSetup() {
+      if (appState.tempModalLines.size === 0) {
+        showToast('Please select at least 1 production line', 'warning');
+        return;
+      }
+      appState.selectedLines = new Set(appState.tempModalLines);
+      closeLineSetupModal();
+      document.getElementById('lineCountBadge').textContent = appState.selectedLines.size;
+      renderCurrentActiveView();
+      showToast(`Saved configuration: ${appState.selectedLines.size} lines visible`, 'success');
+    }
+
+    function buildPeriodDropdown() {
+      const label = document.getElementById('periodSelectLabel');
+      const sel = document.getElementById('periodSelect');
+      sel.innerHTML = '';
+
+      if (appState.mode === 'daily') {
+        label.textContent = 'Date:';
+        appState.allDates.slice().reverse().forEach((d, idx) => {
+          const opt = document.createElement('option');
+          opt.value = d;
+          opt.textContent = idx === 0 ? `${d} (Latest)` : d;
+          opt.className = 'bg-[#080e1c] text-slate-100 font-semibold py-1';
+          if (d === appState.selectedDate) opt.selected = true;
+          sel.appendChild(opt);
+        });
+      } else {
+        label.textContent = 'Week:';
+        appState.allWeeks.slice().reverse().forEach((w, idx) => {
+          const opt = document.createElement('option');
+          opt.value = w;
+          opt.textContent = idx === 0 ? `Week ${w} (Latest)` : `Week ${w}`;
+          opt.className = 'bg-[#080e1c] text-slate-100 font-semibold py-1';
+          if (w === appState.selectedWeek) opt.selected = true;
+          sel.appendChild(opt);
+        });
+      }
+    }
+
+    function onPeriodChange(val) {
+      if (appState.mode === 'daily') {
+        appState.selectedDate = val;
+      } else {
+        appState.selectedWeek = parseInt(val, 10);
+      }
+      const sel = document.getElementById('periodSelect');
+      if (sel) sel.value = val;
+      renderCurrentActiveView();
+    }
+
+    function stepPeriod(direction) {
+      const isDaily = appState.mode === 'daily';
+      const periods = isDaily ? appState.allDates : appState.allWeeks;
+      const current = isDaily ? appState.selectedDate : appState.selectedWeek;
+      const idx = periods.indexOf(current);
+      if (idx === -1) return;
+
+      const newIdx = idx + direction;
+      if (newIdx >= 0 && newIdx < periods.length) {
+        onPeriodChange(periods[newIdx]);
+        if (appState.activeModalLine && !document.getElementById('drillDownModal').classList.contains('hidden')) {
+          openDrillDownModal(appState.activeModalLine);
+        }
+      }
+    }
+
+    function openAutoSyncModal() {
+      document.getElementById('chkAutoSync').checked = appState.autoSyncActive;
+      document.getElementById('numSyncInterval').value = appState.syncIntervalMins;
+      document.getElementById('autoSyncModal').classList.remove('hidden');
+    }
+
+    function closeAutoSyncModal() {
+      document.getElementById('autoSyncModal').classList.add('hidden');
+    }
+
+    function saveAutoSync() {
+      appState.autoSyncActive = document.getElementById('chkAutoSync').checked;
+      appState.syncIntervalMins = Math.max(1, parseInt(document.getElementById('numSyncInterval').value, 10) || 5);
+      closeAutoSyncModal();
+
+      if (autoSyncTimer) clearInterval(autoSyncTimer);
+      
+      const badge = document.getElementById('autoSyncLabel');
+      if (appState.autoSyncActive) {
+        appState.countdownSecs = appState.syncIntervalMins * 60;
+        autoSyncTimer = setInterval(pollAutoSync, 1000);
+        badge.textContent = `Sync: ${formatMinutes(appState.countdownSecs)}`;
+        badge.className = 'text-[10px] text-emerald-400 font-bold hidden md:inline';
+        showToast(`Auto-Sync enabled: every ${appState.syncIntervalMins} min`, 'info');
+      } else {
+        badge.textContent = 'Auto: Off';
+        badge.className = 'text-[10px] text-slate-400 hidden md:inline';
+        showToast('Auto-Sync disabled', 'warning');
+      }
+    }
+
+    function formatMinutes(seconds) {
+      const m = Math.floor(seconds / 60);
+      const s = seconds % 60;
+      return `${m}:${s < 10 ? '0' : ''}${s}`;
+    }
+
+    function pollAutoSync() {
+      if (!appState.autoSyncActive) return;
+      appState.countdownSecs--;
+      const badge = document.getElementById('autoSyncLabel');
+      if (badge) badge.textContent = `Sync: ${formatMinutes(appState.countdownSecs)}`;
+
+      if (appState.countdownSecs <= 0) {
+        appState.countdownSecs = appState.syncIntervalMins * 60;
+        fetchFromGoogleDrive(appState.mode);
+      }
+    }
+
+    function toggleFullscreen() {
+      try {
+        if (!document.fullscreenElement) {
+          if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
+        } else {
+          if (document.exitFullscreen) document.exitFullscreen();
+        }
+      } catch (err) {
+        showToast('Fullscreen mode not available', 'warning');
+      }
+    }
+
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      let border = type === 'success' ? 'border-emerald-500/80 text-emerald-300' : type === 'warning' ? 'border-amber-500/80 text-amber-300' : 'border-cyan-500/80 text-cyan-300';
+      toast.className = `p-2.5 rounded-lg bg-[#080e1c] border ${border} shadow-2xl text-xs transition-all pointer-events-auto transform translate-y-2 opacity-0 flex items-center gap-2 font-medium`;
+      toast.innerHTML = `<span>${message}</span>`;
+      container.appendChild(toast);
+      requestAnimationFrame(() => toast.classList.remove('translate-y-2', 'opacity-0'));
+      setTimeout(() => {
+        toast.classList.add('opacity-0');
+        setTimeout(() => toast.remove(), 300);
+      }, 3500);
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeDrillDownModal();
+        closeLineSetupModal();
+        closeAutoSyncModal();
+        closeSettingsModal();
+      } else if (e.key === 'ArrowLeft') {
+        stepPeriod(-1);
+      } else if (e.key === 'ArrowRight') {
+        stepPeriod(1);
+      }
+    });
+
+    // Startup: Auto-fetch Daily OEE from Google Drive immediately
+    window.addEventListener('DOMContentLoaded', () => {
+      fetchFromGoogleDrive('daily');
+    });
+  </script>
+</body>
+</html>
